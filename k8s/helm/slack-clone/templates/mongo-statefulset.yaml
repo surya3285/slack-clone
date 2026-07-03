@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongo
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: mongo
+    tier: database
+    {{- include "slack-clone.labels" . | nindent 4 }}
+spec:
+  serviceName: mongo
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongo
+  template:
+    metadata:
+      labels:
+        app: mongo
+        tier: database
+    spec:
+      containers:
+        - name: mongo
+          image: {{ .Values.mongo.image }}
+          ports:
+            - containerPort: 27017
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: mongo-credentials
+                  key: MONGO_INITDB_ROOT_USERNAME
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mongo-credentials
+                  key: MONGO_INITDB_ROOT_PASSWORD
+          volumeMounts:
+            - name: mongo-data
+              mountPath: /data/db
+          resources:
+            {{- toYaml .Values.mongo.resources | nindent 12 }}
+          readinessProbe:
+            exec:
+              command: ["mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+            initialDelaySeconds: 20
+            periodSeconds: 20
+  volumeClaimTemplates:
+    - metadata:
+        name: mongo-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.mongo.storageClassName }}
+        storageClassName: {{ .Values.mongo.storageClassName }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.mongo.storage }}

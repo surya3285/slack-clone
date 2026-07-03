@@ -1,0 +1,63 @@
+mongo:
+  image: mongo:7
+  storage: 1Gi
+  storageClassName: "" # empty = use the cluster's default StorageClass
+  auth:
+    username: root
+    password: changeme
+    database: slackclone
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+backend:
+  image:
+    repository: slack-clone-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  port: 5000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+
+frontend:
+  image:
+    repository: slack-clone-frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  port: 80
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+  service:
+    type: ClusterIP
+
+ingress:
+  enabled: true
+  className: nginx
+  host: slack-clone.local
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+
+networkPolicy:
+  enabled: true

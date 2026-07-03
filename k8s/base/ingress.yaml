@@ -1,0 +1,38 @@
+# Assumes the ingress-nginx controller is installed in the cluster.
+# Add "127.0.0.1 slack-clone.local" to /etc/hosts when running locally
+# (point it at `minikube ip` instead of 127.0.0.1 if using minikube).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: slack-clone
+  namespace: slack-clone
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: slack-clone.local
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 5000
+          - path: /socket.io
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 5000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

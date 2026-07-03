@@ -1,0 +1,21 @@
+# Only the backend may talk to the database - nothing else in (or outside) the
+# namespace can reach Mongo directly.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mongo-allow-backend-only
+  namespace: slack-clone
+spec:
+  podSelector:
+    matchLabels:
+      app: mongo
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: backend
+      ports:
+        - protocol: TCP
+          port: 27017

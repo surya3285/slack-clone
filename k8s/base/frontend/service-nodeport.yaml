@@ -1,0 +1,19 @@
+# Optional alternative to the Ingress: expose the frontend directly via
+# NodePort for quick local testing without an ingress controller.
+# Apply with: kubectl apply -f service-nodeport.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-nodeport
+  namespace: slack-clone
+  labels:
+    app: frontend
+    tier: frontend
+spec:
+  type: NodePort
+  selector:
+    app: frontend
+  ports:
+    - port: 80
+      targetPort: 80
+      nodePort: 30080

@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: frontend
+    tier: frontend
+    {{- include "slack-clone.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.frontend.replicaCount }}
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+        tier: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+          imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.frontend.port }}
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.frontend.port }}
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.frontend.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 20

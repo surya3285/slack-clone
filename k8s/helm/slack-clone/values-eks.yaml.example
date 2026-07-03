@@ -1,0 +1,28 @@
+# Example overrides for AWS EKS. Copy to values-eks.yaml, fill in your
+# ECR registry + AWS Load Balancer Controller details, then:
+#   helm install slack-clone ./k8s/helm/slack-clone \
+#     --namespace slack-clone --create-namespace \
+#     -f k8s/helm/slack-clone/values-eks.yaml
+
+mongo:
+  storageClassName: gp3
+
+backend:
+  image:
+    repository: <aws_account_id>.dkr.ecr.<region>.amazonaws.com/slack-clone-backend
+    tag: latest
+    pullPolicy: Always
+
+frontend:
+  image:
+    repository: <aws_account_id>.dkr.ecr.<region>.amazonaws.com/slack-clone-frontend
+    tag: latest
+    pullPolicy: Always
+
+ingress:
+  # Requires the AWS Load Balancer Controller installed in the cluster.
+  className: alb
+  host: "" # ALB ingress typically doesn't need a host; use the ALB DNS name
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip

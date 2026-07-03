@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: mongo
+    tier: database
+    {{- include "slack-clone.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    app: mongo
+  ports:
+    - port: 27017
+      targetPort: 27017
