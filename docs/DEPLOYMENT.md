@@ -261,9 +261,8 @@ aws ec2 create-tags --region <region> --resources <subnet-id-1> <subnet-id-2> <s
 ### 11.5 Deploy
 
 `k8s/helm/slack-clone/values-eks.yaml` already exists in the repo with this
-project's real values filled in, but **fully commented out** on purpose (so
-`helm install -f` can't silently apply it with someone else's account id).
-Uncomment it and adjust the account id/region if they've changed, then:
+project's real values filled in (account id/region specific to this
+deployment - adjust if they've changed), then:
 
 ```bash
 helm install slack-clone k8s/helm/slack-clone \
