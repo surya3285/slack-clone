@@ -1,0 +1,27 @@
+# Real values used for this project's actual EKS deployment, kept here
+# commented-out as a filled-in reference (see values-eks.yaml.example for
+# the templated version). Uncomment and adjust before using with
+# `helm install -f values-eks.yaml` - the account id below is specific to
+# the AWS account this was deployed to.
+#
+# mongo:
+#   storageClassName: gp3-csi
+#
+# backend:
+#   image:
+#     repository: 778477254912.dkr.ecr.eu-north-1.amazonaws.com/slack-clone-backend
+#     tag: latest
+#     pullPolicy: Always
+#
+# frontend:
+#   image:
+#     repository: 778477254912.dkr.ecr.eu-north-1.amazonaws.com/slack-clone-frontend
+#     tag: latest
+#     pullPolicy: Always
+#
+# ingress:
+#   className: alb
+#   host: ""
+#   annotations:
+#     alb.ingress.kubernetes.io/target-type: ip
+#     alb.ingress.kubernetes.io/target-group-attributes: stickiness.enabled=true,stickiness.type=lb_cookie,stickiness.lb_cookie.duration_seconds=86400
