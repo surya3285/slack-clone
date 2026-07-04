@@ -260,15 +260,19 @@ aws ec2 create-tags --region <region> --resources <subnet-id-1> <subnet-id-2> <s
 
 ### 11.5 Deploy
 
-Copy `k8s/helm/slack-clone/values-eks.yaml.example` to
-`values-eks.yaml` (git-ignored — it'll contain your account id) and fill in
-your account id/region, then:
+`k8s/helm/slack-clone/values-eks.yaml` already exists in the repo with this
+project's real values filled in, but **fully commented out** on purpose (so
+`helm install -f` can't silently apply it with someone else's account id).
+Uncomment it and adjust the account id/region if they've changed, then:
 
 ```bash
 helm install slack-clone k8s/helm/slack-clone \
   --namespace slack-clone --create-namespace \
   -f k8s/helm/slack-clone/values-eks.yaml
 ```
+
+(Starting fresh elsewhere? Copy `values-eks.yaml.example` instead and fill
+in your own values.)
 
 ### 11.6 Verify
 
@@ -293,6 +297,36 @@ helm uninstall slack-clone -n slack-clone
 kubectl delete -f k8s/eks/ingressclass.yaml -f k8s/eks/storageclass.yaml
 # then delete the cluster itself via the EKS console (or `eksctl delete cluster`)
 ```
+
+**All app data goes with it** — Mongo's EBS volume is deleted along with
+the cluster, so there's no data to migrate; the next deployment starts from
+an empty database (re-signup any test users).
+
+### 11.8 What survives a full teardown, and what doesn't
+
+If you delete the whole cluster and recreate it later (rather than just
+`helm uninstall`), here's what needs redoing vs. what's untouched:
+
+**Survives** (these are separate AWS resources, not part of the cluster):
+- ECR repos and pushed images
+- The IAM user and its ECR permissions
+- Subnet tags (`kubernetes.io/role/elb`, etc.) — as long as you reuse the
+  same VPC *and* the same cluster name (the
+  `kubernetes.io/cluster/<name>=shared` tag is name-specific; a renamed
+  cluster needs the tags redone)
+
+**Doesn't survive** (redo these against the new cluster):
+1. Recreate the EKS Auto Mode cluster (console).
+2. Re-add the **EKS access entry** for your IAM user (§11.1) — it's owned
+   by the cluster object, so it's gone even if the IAM user itself isn't.
+3. `aws eks update-kubeconfig ...` again — the old kubeconfig context points
+   at a cluster that no longer exists.
+4. Reapply the cluster-level prerequisites (§11.4):
+   ```bash
+   kubectl apply -f k8s/eks/ingressclass.yaml
+   kubectl apply -f k8s/eks/storageclass.yaml
+   ```
+5. `helm install` again (§11.5) — uncomment `values-eks.yaml` first.
 
 See [docs/TROUBLESHOOTING.md](TROUBLESHOOTING.md) for the full story behind
 each of these steps — none of them were obvious upfront.
