@@ -189,21 +189,8 @@ helm uninstall slack-clone -n slack-clone
 
 ## 11. Moving to AWS EKS
 
-1. Create the cluster (`eksctl create cluster ...`) and push both images to
-   ECR instead of loading them locally.
-2. Install the
-   [AWS Load Balancer Controller](https://kubernetes-sigs.github.io/aws-load-balancer-controller/)
-   so `ingressClassName: alb` works (or keep using ingress-nginx via a
-   `NodePort`/`LoadBalancer` Service if you'd rather not adopt ALB yet).
-3. Use the `gp3` StorageClass for Mongo's PVC instead of the local default.
-4. With Helm, copy `k8s/helm/slack-clone/values-eks.yaml.example` to
-   `values-eks.yaml`, fill in your ECR registry and AWS Load Balancer
-   Controller annotations, and deploy with:
-   ```bash
-   helm install slack-clone k8s/helm/slack-clone \
-     --namespace slack-clone --create-namespace \
-     -f k8s/helm/slack-clone/values-eks.yaml
-   ```
-5. `kubectl get ingress -n slack-clone` will show the ALB's DNS name once
-   provisioned — use that (or a Route53 record pointed at it) instead of
-   `slack-clone.test`.
+This branch (`main`) is local-only (minikube/kind). The full, verified AWS
+EKS deployment — including the cluster-specific fixes it actually took to
+get working (storage class, ALB ingress, subnet tagging, image
+architecture) — lives on the **`aws-eks`** branch, along with its own
+`docs/DEPLOYMENT.md` section and `docs/TROUBLESHOOTING.md` entries.
