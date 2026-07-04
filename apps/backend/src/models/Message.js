@@ -2,8 +2,8 @@ const mongoose = require('mongoose');
 
 const messageSchema = new mongoose.Schema(
   {
-    channel: { type: String, default: 'general', index: true },
-    username: { type: String, required: true },
+    conversation: { type: mongoose.Schema.Types.ObjectId, ref: 'Conversation', required: true, index: true },
+    sender: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     text: { type: String, required: true },
   },
   { timestamps: true }

@@ -14,6 +14,16 @@ mongo:
       cpu: 500m
       memory: 512Mi
 
+redis:
+  image: redis:7-alpine
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
 backend:
   image:
     repository: slack-clone-backend
@@ -21,6 +31,8 @@ backend:
     pullPolicy: IfNotPresent
   replicaCount: 2
   port: 5000
+  # Demo secret only - override with --set backend.jwtSecret=... for anything beyond local learning.
+  jwtSecret: "0b3398aa7d86dab356e20af36a5b2736f3fcdc71bda78080b28be615fc4816dd"
   resources:
     requests:
       cpu: 100m
@@ -54,10 +66,13 @@ frontend:
 ingress:
   enabled: true
   className: nginx
-  host: slack-clone.local
+  host: slack-clone.test
   annotations:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/affinity: "cookie"
+    nginx.ingress.kubernetes.io/affinity-mode: "persistent"
+    nginx.ingress.kubernetes.io/session-cookie-name: "SLACKCLONESESSION"
 
 networkPolicy:
   enabled: true

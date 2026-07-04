@@ -63,6 +63,7 @@ kind load docker-image slack-clone-frontend:latest --name slack-clone
 ```bash
 kubectl apply -f k8s/base/namespace.yaml
 kubectl apply -f k8s/base/mongo/
+kubectl apply -f k8s/base/redis/
 kubectl apply -f k8s/base/backend/
 kubectl apply -f k8s/base/frontend/
 kubectl apply -f k8s/base/ingress.yaml
@@ -92,16 +93,27 @@ all `Running` and `Ready`.
 
 ## 7. Access the app
 
-Add the ingress host to `/etc/hosts`:
+Add the ingress host to `/etc/hosts`. Use `slack-clone.test`, not
+`slack-clone.local` — on macOS, `.local` is reserved for Bonjour/mDNS, so
+DNS resolution hangs instead of using `/etc/hosts`. `.test` is the
+IANA-reserved TLD for local testing and doesn't have this problem.
+
 ```bash
-# minikube
-echo "$(minikube ip) slack-clone.local" | sudo tee -a /etc/hosts
+# minikube with the docker driver on macOS/Windows: the cluster's IP isn't
+# directly reachable from the host, so point at 127.0.0.1 and run
+# `minikube tunnel` in a separate terminal (leave it running):
+minikube tunnel
+echo "127.0.0.1 slack-clone.test" | sudo tee -a /etc/hosts
+
+# minikube with the docker driver on Linux, or any driver where the
+# cluster IP is directly routable:
+echo "$(minikube ip) slack-clone.test" | sudo tee -a /etc/hosts
 
 # kind (with a local ingress controller on localhost)
-echo "127.0.0.1 slack-clone.local" | sudo tee -a /etc/hosts
+echo "127.0.0.1 slack-clone.test" | sudo tee -a /etc/hosts
 ```
 
-Then open `http://slack-clone.local`.
+Then open `http://slack-clone.test`.
 
 No ingress controller set up yet? Apply the NodePort alternative instead and
 hit `http://<node-ip>:30080`:
@@ -139,11 +151,38 @@ kubectl exec -n slack-clone deploy/frontend -- wget -qO- --timeout=3 http://mong
 - **Wrong ports** — the backend listens on `5000`, mongo on `27017`,
   frontend/nginx on `80`. If you change `PORT` in the backend ConfigMap,
   update the Service, Deployment probes, and Ingress backend port to match.
+- **Rebuilt an image but the cluster still runs the old code** —
+  `minikube image load` compares image *name:tag* against its own cache,
+  not content, so re-running `docker build` + `minikube image load` with the
+  same `:latest` tag can silently no-op and leave the stale image in place.
+  `kubectl rollout restart` won't help either since it just recreates pods
+  from whatever image the node already has cached. Force it:
+  ```bash
+  kubectl scale deployment/backend deployment/frontend -n slack-clone --replicas=0
+  minikube image rm slack-clone-backend:latest slack-clone-frontend:latest
+  minikube image load slack-clone-backend:latest --overwrite=true
+  minikube image load slack-clone-frontend:latest --overwrite=true
+  kubectl scale deployment/backend deployment/frontend -n slack-clone --replicas=2
+  ```
+  (Scaling to 0 first is necessary — `minikube image rm` fails while a
+  running container still references the image.) Verify the fix by
+  comparing `docker inspect <image>:latest --format '{{.Id}}'` against
+  `minikube image ls --format table`.
+- **Browser shows old UI after a redeploy** — hard-refresh (the browser may
+  have cached the old `index.html`/JS bundle).
+- **Socket.io keeps reconnecting / messages never send with 2+ backend
+  replicas** — the Ingress needs cookie-based session affinity
+  (`nginx.ingress.kubernetes.io/affinity: cookie`, already set in
+  `k8s/base/ingress.yaml`) since Socket.io's handshake is stateful and tied
+  to whichever pod accepted the first request. Without it, requests
+  round-robin across pods and the handshake fails.
+- **`.local` hostnames hang in the browser on macOS** — `.local` is reserved
+  for Bonjour/mDNS; use `.test` instead (see step 7).
 
 ## 10. Tear down
 
 ```bash
-kubectl delete -f k8s/base/ingress.yaml -f k8s/base/frontend/ -f k8s/base/backend/ -f k8s/base/mongo/ -f k8s/base/namespace.yaml
+kubectl delete -f k8s/base/ingress.yaml -f k8s/base/frontend/ -f k8s/base/backend/ -f k8s/base/redis/ -f k8s/base/mongo/ -f k8s/base/namespace.yaml
 # or, if installed via Helm:
 helm uninstall slack-clone -n slack-clone
 ```
@@ -167,4 +206,4 @@ helm uninstall slack-clone -n slack-clone
    ```
 5. `kubectl get ingress -n slack-clone` will show the ALB's DNS name once
    provisioned — use that (or a Route53 record pointed at it) instead of
-   `slack-clone.local`.
+   `slack-clone.test`.

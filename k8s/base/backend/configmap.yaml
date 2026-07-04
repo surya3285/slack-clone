@@ -5,3 +5,4 @@ metadata:
   namespace: slack-clone
 data:
   PORT: "5000"
+  REDIS_URL: "redis://redis.slack-clone.svc.cluster.local:6379"

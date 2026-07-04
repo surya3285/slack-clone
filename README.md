@@ -32,7 +32,7 @@ docs/
 docker build -t slack-clone-backend:latest ./apps/backend
 docker build -t slack-clone-frontend:latest ./apps/frontend
 # load images into your local cluster, then:
-kubectl apply -f k8s/base/namespace.yaml -f k8s/base/mongo/ -f k8s/base/backend/ -f k8s/base/frontend/ -f k8s/base/ingress.yaml
+kubectl apply -f k8s/base/namespace.yaml -f k8s/base/mongo/ -f k8s/base/redis/ -f k8s/base/backend/ -f k8s/base/frontend/ -f k8s/base/ingress.yaml
 # or: helm install slack-clone k8s/helm/slack-clone --namespace slack-clone --create-namespace
 ```
 
