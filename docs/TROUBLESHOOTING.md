@@ -119,3 +119,86 @@ backend pod broadcasts through Redis instead of only to its own local
 sockets. Verified with a scripted test connecting as two users, forcing
 them onto different pods, and confirming delivery — see
 [docs/ARCHITECTURE.md](ARCHITECTURE.md#why-redis) for the full rationale.
+
+---
+
+# AWS EKS-specific issues
+
+Everything below only applies to deploying on the `aws-eks` branch — none
+of this came up locally.
+
+## 7. `kubectl` commands fail with `Forbidden`, even though AWS credentials work
+
+**Symptom:** `aws sts get-caller-identity` succeeds, `aws eks
+update-kubeconfig` succeeds, but `kubectl get nodes` fails with `nodes is
+forbidden: User "arn:...:user/aws-cli" cannot list resource "nodes"`.
+
+**Root cause:** IAM authentication and Kubernetes RBAC authorization are
+two separate systems. Having valid AWS credentials only proves *who* you
+are to the cluster's API server — it says nothing about *what* you're
+allowed to do inside Kubernetes. That mapping is controlled by the
+cluster's **access entries** (EKS console → cluster → Access tab), not by
+IAM policies.
+
+**Fix:** Added an access entry for the IAM user, with the
+`AmazonEKSClusterAdminPolicy` access policy, scoped to the whole cluster.
+
+## 8. Mongo's PVC stuck `Pending` — storage class provisioner not supported
+
+**Symptom:** `mongo-0` never scheduled. Auto Mode's compute controller
+logged: `failed to validate pvc, provisioner is not supported
+(...StorageClass=gp2)`.
+
+**Root cause:** The default `gp2` StorageClass that ships on the cluster
+uses the legacy in-tree provisioner (`kubernetes.io/aws-ebs`). EKS Auto
+Mode only supports EBS CSI provisioning, not the old in-tree path.
+
+**Fix:** Created a new StorageClass (`k8s/eks/storageclass.yaml`) using a
+CSI provisioner instead, and pointed Mongo's `storageClassName` at it.
+
+## 9. ...and then the *new* storage class also got stuck `Pending`
+
+**Symptom:** After fixing #8, the PVC was still stuck, now with:
+`Waiting for a volume to be created either by the external provisioner
+'ebs.csi.aws.com' or manually by the system administrator` — forever.
+
+**Root cause:** Guessed the wrong provisioner name. `ebs.csi.aws.com` is
+the name used by the separately-installed community **AWS EBS CSI Driver**
+add-on. EKS Auto Mode ships its *own* built-in EBS CSI driver, registered
+under a different name entirely.
+
+**Fix:** Ran `kubectl get csidrivers` to see what was actually registered
+on this cluster — `ebs.csi.eks.amazonaws.com` — and used that name in the
+StorageClass instead. Since `provisioner` is immutable on an existing
+StorageClass object, this required deleting and recreating it (and the
+PVC/pod that referenced it), not just editing it.
+
+## 10. Backend/frontend pods: `ErrImagePull: no match for platform in manifest`
+
+**Symptom:** Pods scheduled onto a node fine, then failed to start with a
+platform mismatch error on the image manifest.
+
+**Root cause:** The images were built on an Apple Silicon (arm64) Mac.
+`docker build` defaults to the host's native architecture, so the pushed
+images were arm64-only. The EKS Auto Mode nodes are Intel/AMD64
+(`c7i-flex.large`) — an architecture the image manifest had no variant for.
+
+**Fix:** Rebuilt with `docker buildx build --platform linux/amd64 --push`
+instead of a plain `docker build` + separate tag/push.
+
+## 11. ALB never gets an address — `couldn't auto-discover subnets`
+
+**Symptom:** The Ingress stayed stuck with an empty `ADDRESS` column. `kubectl
+describe ingress` showed: `Failed build model due to couldn't auto-discover
+subnets: unable to resolve at least one subnet (0 match VPC and tags:
+[kubernetes.io/role/elb])`.
+
+**Root cause:** The ALB controller finds candidate subnets for the load
+balancer by looking for a specific tag (`kubernetes.io/role/elb` for
+internet-facing, `kubernetes.io/role/internal-elb` for internal). The
+cluster's subnets — plain default-VPC subnets — had no tags at all.
+
+**Fix:** Tagged the cluster's public subnets with
+`kubernetes.io/role/elb=1` and `kubernetes.io/cluster/<name>=shared` via
+`aws ec2 create-tags`. The ALB reconciled and got a real address within
+about a minute of the tags landing.

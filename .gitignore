@@ -2,3 +2,4 @@ node_modules/
 dist/
 .env
 *.log
+k8s/helm/slack-clone/values-eks.yaml

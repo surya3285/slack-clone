@@ -1,11 +1,21 @@
-# Example overrides for AWS EKS. Copy to values-eks.yaml, fill in your
-# ECR registry + AWS Load Balancer Controller details, then:
+# Example overrides for AWS EKS (tested against an EKS Auto Mode cluster).
+# Copy to values-eks.yaml, fill in your account id/region/image tags, then:
+#   kubectl apply -f k8s/eks/ingressclass.yaml    # one-time cluster prerequisite
+#   kubectl apply -f k8s/eks/storageclass.yaml    # one-time cluster prerequisite
 #   helm install slack-clone ./k8s/helm/slack-clone \
 #     --namespace slack-clone --create-namespace \
 #     -f k8s/helm/slack-clone/values-eks.yaml
+#
+# Also make sure your images are built for linux/amd64 (EKS Auto Mode nodes
+# are Intel/AMD64) - `docker build` on an Apple Silicon Mac produces arm64
+# images by default, which fail to pull with "no match for platform in
+# manifest". Use `docker buildx build --platform linux/amd64 --push ...`.
 
 mongo:
-  storageClassName: gp3
+  # Auto Mode only supports the EBS CSI provisioner (ebs.csi.aws.com), not
+  # the legacy in-tree "kubernetes.io/aws-ebs" one the default "gp2" class
+  # uses - see k8s/eks/storageclass.yaml for a compatible StorageClass.
+  storageClassName: gp3-csi
 
 backend:
   image:
@@ -20,9 +30,14 @@ frontend:
     pullPolicy: Always
 
 ingress:
-  # Requires the AWS Load Balancer Controller installed in the cluster.
+  # EKS Auto Mode has its own built-in ALB support (controller
+  # eks.amazonaws.com/alb) - distinct from the community AWS Load Balancer
+  # Controller add-on. The "alb" IngressClass + its scheme (internet-facing)
+  # come from k8s/eks/ingressclass.yaml, not from annotations here.
   className: alb
-  host: "" # ALB ingress typically doesn't need a host; use the ALB DNS name
+  host: "" # ALB ingress doesn't need a host; access via the ALB's own DNS name
   annotations:
-    alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
+    # Socket.IO's handshake needs the same client to keep landing on the same
+    # pod, same reason as the nginx cookie-affinity annotation used locally.
+    alb.ingress.kubernetes.io/target-group-attributes: stickiness.enabled=true,stickiness.type=lb_cookie,stickiness.lb_cookie.duration_seconds=86400

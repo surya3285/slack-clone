@@ -187,10 +187,112 @@ kubectl delete -f k8s/base/ingress.yaml -f k8s/base/frontend/ -f k8s/base/backen
 helm uninstall slack-clone -n slack-clone
 ```
 
-## 11. Moving to AWS EKS
+## 11. Deploying to AWS EKS
 
-This branch (`main`) is local-only (minikube/kind). The full, verified AWS
-EKS deployment — including the cluster-specific fixes it actually took to
-get working (storage class, ALB ingress, subnet tagging, image
-architecture) — lives on the **`aws-eks`** branch, along with its own
-`docs/DEPLOYMENT.md` section and `docs/TROUBLESHOOTING.md` entries.
+This section is specific to this `aws-eks` branch (`main` is local-only).
+Tested against an **EKS Auto Mode** cluster, where AWS manages the worker
+nodes for you (via Karpenter) instead of you creating a Node Group
+yourself.
+
+### 11.1 Prerequisites
+
+- An EKS Auto Mode cluster already created (console: EKS → Create cluster;
+  Auto Mode is the default compute option in the current console).
+- AWS CLI installed locally, with credentials for an IAM user that has:
+  - `AmazonEC2ContainerRegistryPowerUser` (or broader) to push to ECR.
+  - An **EKS access entry** (cluster's Access tab → Create access entry)
+    granting that same IAM user the `AmazonEKSClusterAdminPolicy` — this is
+    separate from IAM permissions and easy to miss; without it,
+    `kubectl` commands fail with `Forbidden` even though `aws
+    sts get-caller-identity` works fine.
+- `kubectl` and `helm` installed locally.
+
+### 11.2 Connect kubectl to the cluster
+
+```bash
+aws eks update-kubeconfig --region <region> --name <cluster-name>
+kubectl get nodes   # should show your Auto Mode nodes as Ready
+```
+
+### 11.3 Build for the right CPU architecture
+
+If you're on Apple Silicon (arm64) but your nodes are Intel/AMD64 (check
+with `kubectl describe node | grep instance-cpu-manufacturer`), a plain
+`docker build` produces images the nodes can't run — pods fail with
+`ErrImagePull: no match for platform in manifest`. Build for the correct
+platform explicitly and push straight to ECR:
+
+```bash
+aws ecr create-repository --repository-name slack-clone-backend --region <region>
+aws ecr create-repository --repository-name slack-clone-frontend --region <region>
+
+aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <account_id>.dkr.ecr.<region>.amazonaws.com
+
+docker buildx build --platform linux/amd64 -t <account_id>.dkr.ecr.<region>.amazonaws.com/slack-clone-backend:latest --push ./apps/backend
+docker buildx build --platform linux/amd64 -t <account_id>.dkr.ecr.<region>.amazonaws.com/slack-clone-frontend:latest --push ./apps/frontend
+```
+
+### 11.4 One-time cluster prerequisites
+
+EKS Auto Mode's built-in ALB support uses its own CRDs
+(`eks.amazonaws.com/v1`) and its own EBS CSI driver name
+(`ebs.csi.eks.amazonaws.com`) — both different from the classic, separately
+installed AWS Load Balancer Controller / EBS CSI driver add-ons. These are
+cluster-level, not app-level, so they're applied once, outside the Helm
+chart:
+
+```bash
+kubectl apply -f k8s/eks/ingressclass.yaml    # ALB IngressClass + scheme
+kubectl apply -f k8s/eks/storageclass.yaml    # EBS-backed StorageClass for Mongo
+```
+
+Also make sure your cluster's public subnets are tagged
+`kubernetes.io/role/elb=1` (and `kubernetes.io/cluster/<cluster-name>=shared`)
+— without this, the ALB controller can't figure out where to place the
+load balancer and Ingress reconciliation fails with `couldn't
+auto-discover subnets`. Default-VPC subnets usually aren't tagged this way
+out of the box:
+
+```bash
+aws ec2 create-tags --region <region> --resources <subnet-id-1> <subnet-id-2> <subnet-id-3> \
+  --tags Key=kubernetes.io/role/elb,Value=1 Key=kubernetes.io/cluster/<cluster-name>,Value=shared
+```
+
+### 11.5 Deploy
+
+Copy `k8s/helm/slack-clone/values-eks.yaml.example` to
+`values-eks.yaml` (git-ignored — it'll contain your account id) and fill in
+your account id/region, then:
+
+```bash
+helm install slack-clone k8s/helm/slack-clone \
+  --namespace slack-clone --create-namespace \
+  -f k8s/helm/slack-clone/values-eks.yaml
+```
+
+### 11.6 Verify
+
+```bash
+kubectl get pods -n slack-clone      # all 6 should reach Running
+kubectl get pvc -n slack-clone       # mongo's PVC should be Bound
+kubectl get ingress -n slack-clone   # ADDRESS populates once the ALB is active (a few minutes)
+```
+
+Once `ADDRESS` shows an ALB hostname, curl it directly (DNS can take a
+minute to propagate after the ALB first goes active):
+```bash
+curl http://<alb-address>/api/health
+```
+
+### 11.7 Tear down (stop billing)
+
+EKS bills by the hour for the control plane regardless of usage — delete
+the app and, when you're done testing for the day, the cluster itself:
+```bash
+helm uninstall slack-clone -n slack-clone
+kubectl delete -f k8s/eks/ingressclass.yaml -f k8s/eks/storageclass.yaml
+# then delete the cluster itself via the EKS console (or `eksctl delete cluster`)
+```
+
+See [docs/TROUBLESHOOTING.md](TROUBLESHOOTING.md) for the full story behind
+each of these steps — none of them were obvious upfront.

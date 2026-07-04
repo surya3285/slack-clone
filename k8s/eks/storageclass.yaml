@@ -1,0 +1,13 @@
+# EKS Auto Mode only supports the EBS CSI provisioner, not the legacy
+# in-tree "kubernetes.io/aws-ebs" provisioner the default "gp2" class uses.
+# Note: Auto Mode's built-in driver registers as "ebs.csi.eks.amazonaws.com",
+# not the community add-on's "ebs.csi.aws.com" - check `kubectl get csidrivers`
+# if this ever needs re-verifying on a different cluster.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3-csi
+provisioner: ebs.csi.eks.amazonaws.com
+parameters:
+  type: gp3
+volumeBindingMode: WaitForFirstConsumer
